@@ -91,10 +91,10 @@ def main():
         save_metadata=False
     )
 
-    # Check for authentication secrets to avoid Instagram's 401 Unauthorized rate-limits
+    # Configure Instagram session to eliminate 401 Unauthorized / 302 Redirect blocks
     session_file_b64 = os.environ.get("INSTALOADER_SESSION_B64")
     ig_login_user = os.environ.get("INSTAGRAM_LOGIN_USER")
-    session_id = os.environ.get("INSTAGRAM_SESSIONID")
+    raw_session_id = os.environ.get("INSTAGRAM_SESSIONID")
 
     if session_file_b64 and ig_login_user:
         try:
@@ -104,12 +104,33 @@ def main():
             with open(session_path, "wb") as f:
                 f.write(base64.b64decode(session_file_b64))
             L.load_session_from_file(ig_login_user, filename=session_path)
-            logger.info(f"Successfully restored Instaloader session for @{ig_login_user}")
+            logger.info(f"Successfully restored full Instaloader session for @{ig_login_user}")
         except Exception as se:
             logger.warning(f"Failed to restore session file: {se}")
-    elif session_id:
-        L.context._session.cookies.set("sessionid", session_id, domain=".instagram.com")
-        logger.info("Loaded sessionid cookie into Instaloader context.")
+    elif raw_session_id:
+        try:
+            session_id = raw_session_id.strip('"\' \t\r\n')
+            unquoted = urllib.parse.unquote(session_id)
+            user_id = unquoted.split(":")[0]
+
+            s = L.context._session
+            # Seed session by visiting Instagram root to acquire csrftoken and mid
+            s.get("https://www.instagram.com/", timeout=10)
+            csrf_token = s.cookies.get_dict().get("csrftoken", "")
+
+            # Set required authentication cookies
+            s.cookies.set("sessionid", session_id, domain=".instagram.com", path="/")
+            if user_id.isdigit():
+                s.cookies.set("ds_user_id", user_id, domain=".instagram.com", path="/")
+
+            if csrf_token:
+                s.headers.update({"X-CSRFToken": csrf_token})
+            s.headers.update({"x-ig-app-id": "936619743392459"})
+
+            L.context.username = ig_login_user or user_id
+            logger.info(f"Loaded sessionid for User ID {user_id}. Logged-in state: {L.context.is_logged_in}")
+        except Exception as ce:
+            logger.error(f"Error configuring session from sessionid: {ce}")
 
     try:
         profile = instaloader.Profile.from_username(L.context, target_user)
