@@ -74,6 +74,7 @@ def main():
 
     os.makedirs(IMAGES_DIR, exist_ok=True)
     os.makedirs("temp", exist_ok=True)
+    open(os.path.join(DOCS_DIR, ".nojekyll"), "a").close()
 
     state = load_json(STATE_FILE, {"active_posts": []})
     active_posts = state.get("active_posts", [])

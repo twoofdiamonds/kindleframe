@@ -4,9 +4,8 @@
 # Runs autonomously on your Kindle to fetch photos from GitHub Pages & cycle them.
 # ==============================================================================
 
-# REPLACE WITH YOUR GITHUB PAGES URL:
-# (e.g. https://yourusername.github.io/kindle-instagram-frame)
-BASE_URL="https://YOUR_USERNAME.github.io/YOUR_REPO_NAME"
+# GitHub Pages URL:
+BASE_URL="https://twoofdiamonds.github.io/kindleframe"
 
 PHOTOS_DIR="/mnt/us/photos"
 MANIFEST_FILE="/tmp/kindle_manifest.json"
