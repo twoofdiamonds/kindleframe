@@ -91,6 +91,26 @@ def main():
         save_metadata=False
     )
 
+    # Check for authentication secrets to avoid Instagram's 401 Unauthorized rate-limits
+    session_file_b64 = os.environ.get("INSTALOADER_SESSION_B64")
+    ig_login_user = os.environ.get("INSTAGRAM_LOGIN_USER")
+    session_id = os.environ.get("INSTAGRAM_SESSIONID")
+
+    if session_file_b64 and ig_login_user:
+        try:
+            import base64
+            session_path = os.path.expanduser(f"~/.config/instaloader/session-{ig_login_user}")
+            os.makedirs(os.path.dirname(session_path), exist_ok=True)
+            with open(session_path, "wb") as f:
+                f.write(base64.b64decode(session_file_b64))
+            L.load_session_from_file(ig_login_user, filename=session_path)
+            logger.info(f"Successfully restored Instaloader session for @{ig_login_user}")
+        except Exception as se:
+            logger.warning(f"Failed to restore session file: {se}")
+    elif session_id:
+        L.context._session.cookies.set("sessionid", session_id, domain=".instagram.com")
+        logger.info("Loaded sessionid cookie into Instaloader context.")
+
     try:
         profile = instaloader.Profile.from_username(L.context, target_user)
         latest_post = None

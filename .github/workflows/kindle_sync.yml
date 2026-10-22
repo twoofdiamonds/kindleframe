@@ -30,6 +30,9 @@ jobs:
 
       - name: Run Instagram Sync & E-Ink Image Processor
         env:
+          INSTALOADER_SESSION_B64: ${{ secrets.INSTALOADER_SESSION_B64 }}
+          INSTAGRAM_LOGIN_USER: ${{ secrets.INSTAGRAM_LOGIN_USER }}
+          INSTAGRAM_SESSIONID: ${{ secrets.INSTAGRAM_SESSIONID }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
