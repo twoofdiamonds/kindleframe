@@ -2,18 +2,15 @@
   "items": [
     {
       "name": "Start Instagram Screensaver",
-      "priority": 1,
-      "action": "/bin/sh /mnt/us/screensaver_daemon.sh &"
+      "action": "bin/start.sh"
     },
     {
       "name": "Sync Photos Now",
-      "priority": 2,
-      "action": "/bin/sh /mnt/us/sync_screensavers.sh"
+      "action": "bin/sync.sh"
     },
     {
       "name": "Stop Screensaver Daemon",
-      "priority": 3,
-      "action": "killall screensaver_daemon.sh 2>/dev/null; rm -f /tmp/kindle_ss_hook.pid"
+      "action": "bin/stop.sh"
     }
   ]
 }
