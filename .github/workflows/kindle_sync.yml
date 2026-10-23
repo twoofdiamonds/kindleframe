@@ -28,11 +28,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Install Playwright Chromium browser
+        run: |
+          playwright install chromium
+          playwright install-deps chromium
+
       - name: Run Instagram Sync & E-Ink Image Processor
         env:
           RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
-          INSTALOADER_SESSION_B64: ${{ secrets.INSTALOADER_SESSION_B64 }}
-          INSTAGRAM_LOGIN_USER: ${{ secrets.INSTAGRAM_LOGIN_USER }}
           INSTAGRAM_SESSIONID: ${{ secrets.INSTAGRAM_SESSIONID }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
@@ -40,6 +43,14 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           python sync.py
+
+      - name: Upload debug screenshot (if sync failed)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-screenshot
+          path: temp/debug_screenshot.png
+          if-no-files-found: ignore
 
       - name: Commit and push changes
         run: |

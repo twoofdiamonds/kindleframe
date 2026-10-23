@@ -1,7 +1,18 @@
 {
-  "status": "initializing",
+  "status": "ok",
   "cycle_interval_seconds": 1800,
-  "last_sync": "Never",
-  "total_images": 0,
-  "images": []
+  "last_sync": "2026-10-23T13:13:07.321039+00:00",
+  "total_images": 10,
+  "images": [
+    "DeuOR-CjKE9_0.png",
+    "DeuOR-CjKE9_1.png",
+    "DeuOR-CjKE9_2.png",
+    "DeuOR-CjKE9_3.png",
+    "DeuOR-CjKE9_4.png",
+    "DeuOR-CjKE9_5.png",
+    "DeuOR-CjKE9_6.png",
+    "DeuOR-CjKE9_7.png",
+    "DeuOR-CjKE9_8.png",
+    "DeuOR-CjKE9_9.png"
+  ]
 }

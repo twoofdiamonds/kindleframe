@@ -1,9 +1,18 @@
+"""
+Kindle Instagram Sync — Playwright-based scraper.
+
+Uses a real headless Chromium browser to load Instagram's profile page,
+so Instagram sees a legitimate browser session — not an API bot.
+Falls back to RapidAPI proxy if RAPIDAPI_KEY is set.
+"""
+
 import os
 import json
 import logging
 import datetime
 import urllib.request
-import instaloader
+import re
+import time
 from processor import process_image_for_kindle
 from notifier import send_alert
 
@@ -16,6 +25,7 @@ STATE_FILE = os.path.join(DOCS_DIR, "posts_state.json")
 MANIFEST_FILE = os.path.join(DOCS_DIR, "manifest.json")
 INDEX_FILE = os.path.join(DOCS_DIR, "index.html")
 
+
 def load_json(path, default):
     if os.path.exists(path):
         try:
@@ -24,6 +34,7 @@ def load_json(path, default):
         except Exception as e:
             logger.error(f"Failed to read {path}: {e}")
     return default
+
 
 def generate_html_gallery(active_posts, cycle_interval_min, target_user, last_sync):
     images_html = ""
@@ -63,6 +74,165 @@ def generate_html_gallery(active_posts, cycle_interval_min, target_user, last_sy
     </div>
 </body>
 </html>"""
+
+
+# ─── Strategy 1: Playwright (Real Headless Chromium) ────────────────────────
+
+def fetch_via_playwright(target_user: str, session_id: str):
+    """
+    Opens Instagram in a real headless Chromium browser with the user's
+    session cookie. Instagram sees a legitimate browser — not an API call.
+    Extracts the latest post's shortcode and image URLs from the rendered DOM.
+    """
+    from playwright.sync_api import sync_playwright
+
+    logger.info(f"Launching headless Chromium for @{target_user}...")
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context(
+            viewport={"width": 1280, "height": 900},
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            ),
+            locale="en-US",
+        )
+
+        # Inject session cookie so Instagram thinks we're logged in
+        if session_id:
+            clean_sid = session_id.strip('"\'  \t\r\n')
+            context.add_cookies([
+                {
+                    "name": "sessionid",
+                    "value": clean_sid,
+                    "domain": ".instagram.com",
+                    "path": "/",
+                    "httpOnly": True,
+                    "secure": True,
+                    "sameSite": "None",
+                },
+            ])
+            logger.info("Injected sessionid cookie into browser context.")
+
+        page = context.new_page()
+
+        # Block heavy resources to speed up page load
+        page.route("**/*.{mp4,webm,ogg,woff2,woff}", lambda route: route.abort())
+
+        profile_url = f"https://www.instagram.com/{target_user}/"
+        logger.info(f"Navigating to {profile_url} ...")
+        page.goto(profile_url, wait_until="domcontentloaded", timeout=45000)
+
+        # Wait for the post grid to render
+        try:
+            page.wait_for_selector("article a[href*='/p/']", timeout=20000)
+        except Exception:
+            # Might be a login wall or the profile loaded differently
+            logger.warning("Could not find post links on page, trying alternative selectors...")
+            try:
+                page.wait_for_selector("a[href*='/p/']", timeout=10000)
+            except Exception:
+                # Last resort: take a screenshot for debugging and bail
+                debug_path = "temp/debug_screenshot.png"
+                os.makedirs("temp", exist_ok=True)
+                page.screenshot(path=debug_path)
+                logger.error(f"No posts found on page. Debug screenshot saved to {debug_path}")
+                logger.error(f"Page title: {page.title()}")
+                browser.close()
+                return None
+
+        # Find all post links — format: /p/SHORTCODE/
+        post_links = page.query_selector_all("a[href*='/p/']")
+        if not post_links:
+            logger.error("No post links found in DOM.")
+            browser.close()
+            return None
+
+        # Extract shortcodes from the first (latest) post link
+        first_href = post_links[0].get_attribute("href")
+        match = re.search(r"/p/([A-Za-z0-9_-]+)/", first_href)
+        if not match:
+            logger.error(f"Could not extract shortcode from href: {first_href}")
+            browser.close()
+            return None
+
+        shortcode = match.group(1)
+        logger.info(f"Found latest post: {shortcode}")
+
+        # Navigate into the post to get full-resolution image(s)
+        post_url = f"https://www.instagram.com/p/{shortcode}/"
+        logger.info(f"Opening post: {post_url}")
+        page.goto(post_url, wait_until="domcontentloaded", timeout=30000)
+        time.sleep(3)  # Let lazy images load
+
+        # Collect image URLs from the post
+        image_urls = _extract_post_images(page, shortcode)
+
+        # Check for carousel — click through "Next" buttons
+        carousel_attempts = 0
+        max_carousel = 10
+        while carousel_attempts < max_carousel:
+            next_btn = page.query_selector("button[aria-label='Next']")
+            if not next_btn:
+                break
+            next_btn.click()
+            time.sleep(1.5)
+            new_images = _extract_post_images(page, shortcode)
+            before_count = len(image_urls)
+            for url in new_images:
+                if url not in image_urls:
+                    image_urls.append(url)
+            if len(image_urls) == before_count:
+                break  # No new images found, carousel exhausted
+            carousel_attempts += 1
+
+        browser.close()
+
+        if not image_urls:
+            logger.error("Could not extract any image URLs from the post.")
+            return None
+
+        logger.info(f"Extracted {len(image_urls)} image(s) from post {shortcode}")
+        return {
+            "shortcode": shortcode,
+            "date_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "image_urls": image_urls,
+        }
+
+
+def _extract_post_images(page, shortcode: str) -> list:
+    """Extract image URLs from a post page's DOM."""
+    urls = []
+    # Primary: article img tags with src containing instagram's CDN
+    img_elements = page.query_selector_all("article img[src*='instagram']")
+    if not img_elements:
+        # Fallback: any img with instagram CDN URL
+        img_elements = page.query_selector_all("img[src*='cdninstagram'], img[src*='scontent']")
+
+    for el in img_elements:
+        src = el.get_attribute("src") or ""
+        # Skip tiny profile pictures & icons
+        if src and ("150x150" not in src) and ("44x44" not in src) and ("s150x150" not in src):
+            if src not in urls:
+                urls.append(src)
+
+    # Also check srcset for higher-res versions
+    for el in img_elements:
+        srcset = el.get_attribute("srcset") or ""
+        if srcset:
+            # Pick the highest resolution from srcset
+            parts = srcset.split(",")
+            if parts:
+                last = parts[-1].strip().split(" ")[0]
+                if last and last not in urls and "150x150" not in last:
+                    urls.append(last)
+
+    return urls
+
+
+# ─── Strategy 2: RapidAPI Proxy (Residential IPs) ──────────────────────────
 
 def fetch_via_rapidapi(target_user: str, api_key: str):
     """
@@ -104,6 +274,9 @@ def fetch_via_rapidapi(target_user: str, api_key: str):
         "image_urls": image_urls
     }
 
+
+# ─── Main ───────────────────────────────────────────────────────────────────
+
 def main():
     config = load_json("config.json", {})
     target_user = config.get("instagram", {}).get("target_username", "natgeo")
@@ -122,88 +295,34 @@ def main():
 
     logger.info(f"Checking Instagram for @{target_user}...")
 
-    L = instaloader.Instaloader(
-        download_pictures=False,
-        download_videos=False,
-        download_video_thumbnails=False,
-        download_geotags=False,
-        download_comments=False,
-        save_metadata=False
-    )
-
-    # Configure Instagram session to eliminate 401 Unauthorized / 302 Redirect blocks
-    session_file_b64 = os.environ.get("INSTALOADER_SESSION_B64")
-    ig_login_user = os.environ.get("INSTAGRAM_LOGIN_USER")
-    raw_session_id = os.environ.get("INSTAGRAM_SESSIONID")
-
-    if session_file_b64 and ig_login_user:
-        try:
-            import base64
-            session_path = os.path.expanduser(f"~/.config/instaloader/session-{ig_login_user}")
-            os.makedirs(os.path.dirname(session_path), exist_ok=True)
-            with open(session_path, "wb") as f:
-                f.write(base64.b64decode(session_file_b64))
-            L.load_session_from_file(ig_login_user, filename=session_path)
-            logger.info(f"Successfully restored Instaloader session structure for @{ig_login_user}")
-        except Exception as se:
-            logger.warning(f"Failed to restore session file: {se}")
-
-    # Inject sessionid to ensure session cookie is present and valid
-    if raw_session_id:
-        try:
-            clean_sid = raw_session_id.strip('"\' \t\r\n')
-            L.context._session.cookies.set("sessionid", clean_sid, domain=".instagram.com", path="/")
-
-            if not L.context.username:
-                unquoted = urllib.parse.unquote(clean_sid)
-                user_id = unquoted.split(":")[0]
-                L.context.username = ig_login_user or user_id
-                if user_id.isdigit():
-                    L.context._session.cookies.set("ds_user_id", user_id, domain=".instagram.com", path="/")
-
-            # Ensure CSRF and App ID headers are active
-            csrf = L.context._session.cookies.get_dict().get("csrftoken")
-            if csrf:
-                L.context._session.headers.update({"X-CSRFToken": csrf})
-            L.context._session.headers.update({"x-ig-app-id": "936619743392459"})
-            logger.info(f"Injected sessionid into cookies. Authenticated user: {L.context.username}")
-        except Exception as ce:
-            logger.error(f"Error configuring sessionid: {ce}")
-
+    # Decide which fetch strategy to use
     rapidapi_key = os.environ.get("RAPIDAPI_KEY")
+    session_id = os.environ.get("INSTAGRAM_SESSIONID", "")
+
     try:
+        post_data = None
+
         if rapidapi_key:
+            # Strategy 2: RapidAPI proxy (if key is set)
             post_data = fetch_via_rapidapi(target_user, rapidapi_key)
             if not post_data:
                 msg = f"No posts found for @{target_user} via RapidAPI"
                 logger.warning(msg)
                 send_alert("Kindle Sync Warning", msg)
                 return
-            shortcode = post_data["shortcode"]
-            date_utc = post_data["date_utc"]
-            image_urls = post_data["image_urls"]
-        else:
-            profile = instaloader.Profile.from_username(L.context, target_user)
-            latest_post = None
-            for post in profile.get_posts():
-                latest_post = post
-                break
 
-            if not latest_post:
-                msg = f"No posts found for @{target_user}"
-                logger.warning(msg)
-                send_alert("Kindle Sync Warning", msg)
+        else:
+            # Strategy 1: Playwright headless browser (default)
+            post_data = fetch_via_playwright(target_user, session_id)
+            if not post_data:
+                msg = f"Could not fetch posts for @{target_user} via Playwright browser. Check debug screenshot in temp/."
+                logger.error(msg)
+                send_alert("Kindle Sync Error", msg)
                 return
 
-            shortcode = latest_post.shortcode
-            date_utc = latest_post.date_utc.isoformat()
-            image_urls = []
-            if latest_post.typename == "GraphSidecar":
-                for node in latest_post.get_sidecar_nodes():
-                    if not node.is_video:
-                        image_urls.append(node.display_url)
-            elif not latest_post.is_video:
-                image_urls.append(latest_post.url)
+        shortcode = post_data["shortcode"]
+        date_utc = post_data["date_utc"]
+        image_urls = post_data["image_urls"]
 
         # If already synced, just refresh metadata
         if shortcode in known_shortcodes:
@@ -218,7 +337,14 @@ def main():
                 final_path = os.path.join(IMAGES_DIR, filename)
 
                 logger.info(f"Downloading image {idx+1}/{len(image_urls)} from {shortcode}...")
-                urllib.request.urlretrieve(url, temp_raw)
+                # Instagram CDN URLs may require a browser-like User-Agent
+                req = urllib.request.Request(url, headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "Referer": "https://www.instagram.com/",
+                })
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    with open(temp_raw, "wb") as f:
+                        f.write(resp.read())
 
                 logger.info(f"Dithering for Kindle e-ink: {filename}...")
                 process_image_for_kindle(temp_raw, final_path, kindle_width, kindle_height)
