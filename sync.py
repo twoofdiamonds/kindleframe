@@ -64,6 +64,46 @@ def generate_html_gallery(active_posts, cycle_interval_min, target_user, last_sy
 </body>
 </html>"""
 
+def fetch_via_rapidapi(target_user: str, api_key: str):
+    """
+    Fetches the latest post using RapidAPI's Instagram Scraper.
+    Bypasses datacenter blocks using rotating residential proxies.
+    """
+    import requests
+    url = "https://instagram-scraper-api2.p.rapidapi.com/v1/posts"
+    params = {"username_or_id_or_url": target_user}
+    headers = {
+        "x-rapidapi-key": api_key,
+        "x-rapidapi-host": "instagram-scraper-api2.p.rapidapi.com"
+    }
+    logger.info(f"Fetching posts for @{target_user} via RapidAPI proxy...")
+    resp = requests.get(url, headers=headers, params=params, timeout=20)
+    resp.raise_for_status()
+    data = resp.json()
+    items = data.get("data", {}).get("items", [])
+    if not items:
+        return None
+    post = items[0]
+    shortcode = post.get("code")
+    date_str = datetime.datetime.fromtimestamp(post.get("taken_at", 0), datetime.timezone.utc).isoformat()
+    image_urls = []
+
+    if "carousel_media" in post:
+        for m in post["carousel_media"]:
+            candidates = m.get("image_versions2", {}).get("candidates", [])
+            if candidates:
+                image_urls.append(candidates[0]["url"])
+    elif "image_versions2" in post:
+        candidates = post.get("image_versions2", {}).get("candidates", [])
+        if candidates:
+            image_urls.append(candidates[0]["url"])
+
+    return {
+        "shortcode": shortcode,
+        "date_utc": date_str,
+        "image_urls": image_urls
+    }
+
 def main():
     config = load_json("config.json", {})
     target_user = config.get("instagram", {}).get("target_username", "natgeo")
@@ -132,26 +172,33 @@ def main():
         except Exception as ce:
             logger.error(f"Error configuring session from sessionid: {ce}")
 
+    rapidapi_key = os.environ.get("RAPIDAPI_KEY")
     try:
-        profile = instaloader.Profile.from_username(L.context, target_user)
-        latest_post = None
-        for post in profile.get_posts():
-            latest_post = post
-            break
-
-        if not latest_post:
-            msg = f"No posts found for @{target_user}"
-            logger.warning(msg)
-            send_alert("Kindle Sync Warning", msg)
-            return
-
-        shortcode = latest_post.shortcode
-
-        # If already synced, just refresh metadata
-        if shortcode in known_shortcodes:
-            logger.info(f"Post {shortcode} already downloaded. No new post.")
+        if rapidapi_key:
+            post_data = fetch_via_rapidapi(target_user, rapidapi_key)
+            if not post_data:
+                msg = f"No posts found for @{target_user} via RapidAPI"
+                logger.warning(msg)
+                send_alert("Kindle Sync Warning", msg)
+                return
+            shortcode = post_data["shortcode"]
+            date_utc = post_data["date_utc"]
+            image_urls = post_data["image_urls"]
         else:
-            logger.info(f"New post found: {shortcode} ({latest_post.date_utc})")
+            profile = instaloader.Profile.from_username(L.context, target_user)
+            latest_post = None
+            for post in profile.get_posts():
+                latest_post = post
+                break
+
+            if not latest_post:
+                msg = f"No posts found for @{target_user}"
+                logger.warning(msg)
+                send_alert("Kindle Sync Warning", msg)
+                return
+
+            shortcode = latest_post.shortcode
+            date_utc = latest_post.date_utc.isoformat()
             image_urls = []
             if latest_post.typename == "GraphSidecar":
                 for node in latest_post.get_sidecar_nodes():
@@ -159,6 +206,12 @@ def main():
                         image_urls.append(node.display_url)
             elif not latest_post.is_video:
                 image_urls.append(latest_post.url)
+
+        # If already synced, just refresh metadata
+        if shortcode in known_shortcodes:
+            logger.info(f"Post {shortcode} already downloaded. No new post.")
+        else:
+            logger.info(f"New post found: {shortcode} ({date_utc})")
 
             processed_filenames = []
             for idx, url in enumerate(image_urls):
@@ -179,7 +232,7 @@ def main():
             if processed_filenames:
                 active_posts.insert(0, {
                     "shortcode": shortcode,
-                    "date": latest_post.date_utc.isoformat(),
+                    "date": date_utc,
                     "images": processed_filenames
                 })
 

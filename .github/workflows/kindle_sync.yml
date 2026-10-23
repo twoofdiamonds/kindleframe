@@ -30,6 +30,7 @@ jobs:
 
       - name: Run Instagram Sync & E-Ink Image Processor
         env:
+          RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
           INSTALOADER_SESSION_B64: ${{ secrets.INSTALOADER_SESSION_B64 }}
           INSTAGRAM_LOGIN_USER: ${{ secrets.INSTAGRAM_LOGIN_USER }}
           INSTAGRAM_SESSIONID: ${{ secrets.INSTAGRAM_SESSIONID }}
