@@ -5,7 +5,11 @@
       "action": "bin/replace_ss.sh"
     },
     {
-      "name": "Sync Photos from GitHub",
+      "name": "Enable 12-Hour Auto-Update",
+      "action": "bin/install_cron.sh"
+    },
+    {
+      "name": "Sync Photos Now",
       "action": "bin/sync.sh"
     }
   ]
