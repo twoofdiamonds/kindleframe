@@ -1,0 +1,14 @@
+{
+  "items": [
+    {
+      "name": "Sync Instagram Screensavers",
+      "priority": 1,
+      "action": "/mnt/us/sync_screensavers.sh"
+    },
+    {
+      "name": "Install Auto-Sync Cron Job",
+      "priority": 2,
+      "action": "/mnt/us/install_cron.sh"
+    }
+  ]
+}
