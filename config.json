@@ -1,16 +1,17 @@
 {
   "instagram": {
-    "target_username": "natgeo"
+    "target_username": "koel.jpg"
   },
   "kindle": {
-    "width": 1072,
-    "height": 1448,
+    "model": "Kindle 10th Gen Basic",
+    "width": 600,
+    "height": 800,
     "picture_change_interval_seconds": 1800,
     "max_posts_to_keep": 2
   },
   "notifications": {
     "ntfy": {
-      "enabled": true,
+      "enabled": false,
       "topic": "my-kindle-alerts-change-this"
     },
     "discord": {

@@ -167,6 +167,9 @@ def fetch_via_playwright(target_user: str, session_id: str):
         page.goto(post_url, wait_until="domcontentloaded", timeout=30000)
         time.sleep(3)  # Let lazy images load
 
+        # Dismiss cookie / banner overlays if present
+        _dismiss_overlays(page)
+
         # Collect image URLs from the post
         image_urls = _extract_post_images(page, shortcode)
 
@@ -177,7 +180,16 @@ def fetch_via_playwright(target_user: str, session_id: str):
             next_btn = page.query_selector("button[aria-label='Next']")
             if not next_btn:
                 break
-            next_btn.click()
+            try:
+                # Use evaluate click to bypass overlay interceptors
+                page.evaluate("btn => btn.click()", next_btn)
+            except Exception:
+                try:
+                    next_btn.click(timeout=2000, force=True)
+                except Exception:
+                    logger.info("Could not click next button, stopping carousel pagination.")
+                    break
+
             time.sleep(1.5)
             new_images = _extract_post_images(page, shortcode)
             before_count = len(image_urls)
@@ -200,6 +212,29 @@ def fetch_via_playwright(target_user: str, session_id: str):
             "date_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "image_urls": image_urls,
         }
+
+
+def _dismiss_overlays(page):
+    """Dismisses cookie consent banners or login dialogs if present."""
+    # List of common button labels on Instagram for cookies / dialogs
+    selectors = [
+        "button:has-text('Allow all cookies')",
+        "button:has-text('Decline optional cookies')",
+        "button:has-text('Only allow essential cookies')",
+        "button:has-text('Allow')",
+        "button:has-text('Accept')",
+        "button[aria-label='Close']",
+        "div[role='dialog'] button",
+    ]
+    for sel in selectors:
+        try:
+            btn = page.query_selector(sel)
+            if btn:
+                page.evaluate("el => el.click()", btn)
+                time.sleep(0.5)
+                break
+        except Exception:
+            pass
 
 
 def _extract_post_images(page, shortcode: str) -> list:
