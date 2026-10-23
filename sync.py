@@ -144,33 +144,31 @@ def main():
             with open(session_path, "wb") as f:
                 f.write(base64.b64decode(session_file_b64))
             L.load_session_from_file(ig_login_user, filename=session_path)
-            logger.info(f"Successfully restored full Instaloader session for @{ig_login_user}")
+            logger.info(f"Successfully restored Instaloader session structure for @{ig_login_user}")
         except Exception as se:
             logger.warning(f"Failed to restore session file: {se}")
-    elif raw_session_id:
+
+    # Inject sessionid to ensure session cookie is present and valid
+    if raw_session_id:
         try:
-            session_id = raw_session_id.strip('"\' \t\r\n')
-            unquoted = urllib.parse.unquote(session_id)
-            user_id = unquoted.split(":")[0]
+            clean_sid = raw_session_id.strip('"\' \t\r\n')
+            L.context._session.cookies.set("sessionid", clean_sid, domain=".instagram.com", path="/")
 
-            s = L.context._session
-            # Seed session by visiting Instagram root to acquire csrftoken and mid
-            s.get("https://www.instagram.com/", timeout=10)
-            csrf_token = s.cookies.get_dict().get("csrftoken", "")
+            if not L.context.username:
+                unquoted = urllib.parse.unquote(clean_sid)
+                user_id = unquoted.split(":")[0]
+                L.context.username = ig_login_user or user_id
+                if user_id.isdigit():
+                    L.context._session.cookies.set("ds_user_id", user_id, domain=".instagram.com", path="/")
 
-            # Set required authentication cookies
-            s.cookies.set("sessionid", session_id, domain=".instagram.com", path="/")
-            if user_id.isdigit():
-                s.cookies.set("ds_user_id", user_id, domain=".instagram.com", path="/")
-
-            if csrf_token:
-                s.headers.update({"X-CSRFToken": csrf_token})
-            s.headers.update({"x-ig-app-id": "936619743392459"})
-
-            L.context.username = ig_login_user or user_id
-            logger.info(f"Loaded sessionid for User ID {user_id}. Logged-in state: {L.context.is_logged_in}")
+            # Ensure CSRF and App ID headers are active
+            csrf = L.context._session.cookies.get_dict().get("csrftoken")
+            if csrf:
+                L.context._session.headers.update({"X-CSRFToken": csrf})
+            L.context._session.headers.update({"x-ig-app-id": "936619743392459"})
+            logger.info(f"Injected sessionid into cookies. Authenticated user: {L.context.username}")
         except Exception as ce:
-            logger.error(f"Error configuring session from sessionid: {ce}")
+            logger.error(f"Error configuring sessionid: {ce}")
 
     rapidapi_key = os.environ.get("RAPIDAPI_KEY")
     try:
