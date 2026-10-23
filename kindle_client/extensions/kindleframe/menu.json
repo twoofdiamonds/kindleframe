@@ -1,14 +1,19 @@
 {
   "items": [
     {
-      "name": "Sync Instagram Screensavers",
+      "name": "Start Instagram Screensaver",
       "priority": 1,
-      "action": "/mnt/us/sync_screensavers.sh"
+      "action": "/bin/sh /mnt/us/screensaver_daemon.sh &"
     },
     {
-      "name": "Install Auto-Sync Cron Job",
+      "name": "Sync Photos Now",
       "priority": 2,
-      "action": "/mnt/us/install_cron.sh"
+      "action": "/bin/sh /mnt/us/sync_screensavers.sh"
+    },
+    {
+      "name": "Stop Screensaver Daemon",
+      "priority": 3,
+      "action": "killall screensaver_daemon.sh 2>/dev/null; rm -f /tmp/kindle_ss_hook.pid"
     }
   ]
 }
