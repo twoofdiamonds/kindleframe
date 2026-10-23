@@ -2,3 +2,4 @@ __pycache__/
 *.pyc
 temp/
 .env
+session_b64.txt
