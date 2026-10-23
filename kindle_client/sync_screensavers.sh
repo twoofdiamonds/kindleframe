@@ -88,7 +88,20 @@ if download_file "$BASE_URL/manifest.json" "$MANIFEST_FILE"; then
             fi
         done
 
-        log "Sync complete. Downloaded: $DOWNLOAD_COUNT new photos."
+        # Re-index photos as bg_ssNN.png for Kindle's native screensaver engine
+        IDX=0
+        for f in "$SCREENSAVERS_DIR"/*.png; do
+            case "$(basename "$f")" in
+                bg_ss*) ;;
+                *)
+                    PAD=$(printf "%02d" $IDX)
+                    cp -f "$f" "$SCREENSAVERS_DIR/bg_ss${PAD}.png"
+                    IDX=$((IDX + 1))
+                    ;;
+            esac
+        done
+
+        log "Sync complete. Downloaded: $DOWNLOAD_COUNT new photos, total native screensavers: $IDX."
     fi
     rm -f "$MANIFEST_FILE"
 else

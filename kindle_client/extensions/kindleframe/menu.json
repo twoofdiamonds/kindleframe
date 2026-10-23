@@ -1,16 +1,12 @@
 {
   "items": [
     {
-      "name": "Start Instagram Screensaver",
-      "action": "bin/start.sh"
+      "name": "Activate Instagram Screensavers",
+      "action": "bin/replace_ss.sh"
     },
     {
-      "name": "Sync Photos Now",
+      "name": "Sync Photos from GitHub",
       "action": "bin/sync.sh"
-    },
-    {
-      "name": "Stop Screensaver Daemon",
-      "action": "bin/stop.sh"
     }
   ]
 }
