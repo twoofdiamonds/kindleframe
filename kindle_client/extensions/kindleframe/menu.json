@@ -9,6 +9,10 @@
       "action": "bin/install_cron.sh"
     },
     {
+      "name": "Remove Welcome & Cloud Popups",
+      "action": "bin/fix_ui.sh"
+    },
+    {
       "name": "Sync Photos Now",
       "action": "bin/sync.sh"
     }
