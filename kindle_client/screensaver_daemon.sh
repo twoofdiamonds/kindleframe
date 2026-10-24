@@ -139,5 +139,16 @@ while true; do
     if [ "$STATE" = "screenSaver" ] || [ "$STATE" = "readyToSuspend" ] || [ "$STATE" = "active" ]; then
         sleep 0.5
         rotate_and_display
+
+        # Autonomous 12-hour WiFi sync (43200s)
+        NOW=$(date +%s)
+        LAST_SYNC_FILE="/tmp/kindle_last_sync_time"
+        LAST_SYNC=0
+        [ -f "$LAST_SYNC_FILE" ] && LAST_SYNC=$(cat "$LAST_SYNC_FILE" 2>/dev/null)
+        if [ $(( NOW - LAST_SYNC )) -ge 43200 ]; then
+            echo "$NOW" > "$LAST_SYNC_FILE"
+            log "12 hours elapsed: triggering autonomous WiFi sync..."
+            /bin/sh /mnt/us/sync_screensavers.sh >/dev/null 2>&1 &
+        fi
     fi
 done

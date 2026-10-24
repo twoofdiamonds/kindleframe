@@ -32,23 +32,37 @@ fi
 log "WiFi connected (IP: $IP_CHECK). Checking GitHub..."
 eips 1 1 "Connecting to GitHub...        " 2>/dev/null
 
-# Ensure standalone ARM curl binary has execute permissions
+# Prepare modern standalone curl binary
+# Note: /mnt/us is mounted noexec on Kindle FW 5.x, so binaries MUST run from /tmp or /usr/bin
+CURL_BIN=""
 if [ -f /mnt/us/bin/curl ]; then
-    chmod +x /mnt/us/bin/curl 2>/dev/null
+    cp -f /mnt/us/bin/curl /tmp/curl 2>/dev/null
+    chmod 755 /tmp/curl 2>/dev/null
+    # Also install system-wide if possible
+    mntroot rw 2>/dev/null
+    cp -f /mnt/us/bin/curl /usr/bin/curl 2>/dev/null
+    chmod 755 /usr/bin/curl 2>/dev/null
+    mntroot ro 2>/dev/null
+    CURL_BIN="/tmp/curl"
+elif [ -x /usr/bin/curl ]; then
+    CURL_BIN="/usr/bin/curl"
 fi
 
 download_file() {
     URL="$1"
     DEST="$2"
-    # 1. Use standalone static ARM curl binary first (guaranteed TLS 1.3 / HTTPS)
-    if [ -x /mnt/us/bin/curl ]; then
-        /mnt/us/bin/curl -s -k -f --connect-timeout 8 -m 20 -o "$DEST" "$URL" 2>/dev/null
+    # 1. Use modern static ARM curl (bypasses outdated Amazon SSL and noexec)
+    if [ -x /tmp/curl ]; then
+        /tmp/curl -s -k -f --connect-timeout 8 -m 25 -o "$DEST" "$URL" 2>/dev/null
+    elif [ -n "$CURL_BIN" ] && [ -x "$CURL_BIN" ]; then
+        "$CURL_BIN" -s -k -f --connect-timeout 8 -m 25 -o "$DEST" "$URL" 2>/dev/null
     elif [ -x /usr/bin/curl ]; then
-        /usr/bin/curl -s -k -f --connect-timeout 8 -m 20 -o "$DEST" "$URL" 2>/dev/null
+        /usr/bin/curl -s -k -f --connect-timeout 8 -m 25 -o "$DEST" "$URL" 2>/dev/null
     elif command -v curl >/dev/null 2>&1; then
-        curl -s -k -f --connect-timeout 8 -m 20 -o "$DEST" "$URL" 2>/dev/null
+        curl -s -k -f --connect-timeout 8 -m 25 -o "$DEST" "$URL" 2>/dev/null
     else
-        wget -q -O "$DEST" "$URL" 2>/dev/null || wget -O "$DEST" "$URL" 2>/dev/null
+        # Busybox wget fallback with strict 8s timeout so it never hangs
+        wget -q -T 8 -O "$DEST" "$URL" 2>/dev/null || wget -T 8 -O "$DEST" "$URL" 2>/dev/null
     fi
     [ -s "$DEST" ]
 }
