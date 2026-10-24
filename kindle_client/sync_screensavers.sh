@@ -81,10 +81,12 @@ if download_file "$BASE_URL/manifest.json" "$MANIFEST_FILE"; then
         log "Updated cycle interval to ${INTERVAL}s."
     fi
 
-    # Parse active images
-    IMAGES_LIST=$(grep -o '"images": *\[[^]]*\]' "$MANIFEST_FILE" | grep -o '"[^"]*\.png"' | tr -d '"')
+    # Parse active images (handles both multiline and single-line manifest formatting)
+    IMAGES_LIST=$(grep -o '[a-zA-Z0-9_\-]*\.png' "$MANIFEST_FILE" | sort -u)
 
     if [ -n "$IMAGES_LIST" ]; then
+        IMG_COUNT=$(echo "$IMAGES_LIST" | wc -w)
+        log "Parsed $IMG_COUNT active images from manifest."
         DOWNLOAD_COUNT=0
         for img in $IMAGES_LIST; do
             if [ ! -s "$SCREENSAVERS_DIR/$img" ]; then
@@ -92,6 +94,9 @@ if download_file "$BASE_URL/manifest.json" "$MANIFEST_FILE"; then
                 eips 1 1 "Downloading $img...    " 2>/dev/null
                 if download_file "$BASE_URL/images/$img" "$SCREENSAVERS_DIR/$img"; then
                     DOWNLOAD_COUNT=$((DOWNLOAD_COUNT + 1))
+                    log "Downloaded: $img"
+                else
+                    log "Failed to download: $img"
                 fi
             fi
         done
@@ -128,7 +133,12 @@ if download_file "$BASE_URL/manifest.json" "$MANIFEST_FILE"; then
 
         log "Sync complete! $DOWNLOAD_COUNT downloaded, $IDX active photos."
         eips 1 1 "Sync complete ($IDX photos)!  " 2>/dev/null
-        sleep 2
+        sleep 3
+        eips 1 1 "                               " 2>/dev/null
+    else
+        log "Warning: No image names found in manifest."
+        eips 1 1 "Manifest had 0 photos!         " 2>/dev/null
+        sleep 3
         eips 1 1 "                               " 2>/dev/null
     fi
     rm -f "$MANIFEST_FILE"
