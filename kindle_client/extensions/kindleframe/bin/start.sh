@@ -1,8 +1,8 @@
 #!/bin/sh
-eips 1 1 "Starting 30-min cycler...   " 2>/dev/null
+eips 1 1 "Starting photo cycler...     " 2>/dev/null
 rm -f /mnt/us/.kindleframe_disabled
 
-# If Upstart job isn't installed yet, set it up
+# Ensure Upstart autostart job is installed if not already present
 if [ ! -f /etc/upstart/kindleframe.conf ]; then
     /bin/sh /mnt/us/enable_autostart.sh >/dev/null 2>&1
 fi

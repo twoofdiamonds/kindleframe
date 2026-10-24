@@ -5,11 +5,11 @@
       "action": "bin/replace_ss.sh"
     },
     {
-      "name": "Enable Permanent Auto-Start (30m)",
+      "name": "Enable Permanent Auto-Start",
       "action": "bin/enable_autostart.sh"
     },
     {
-      "name": "Start Photo Cycler (30 min)",
+      "name": "Start Photo Cycler",
       "action": "bin/start.sh"
     },
     {
@@ -17,8 +17,12 @@
       "action": "bin/stop.sh"
     },
     {
-      "name": "Enable 12-Hour Auto-Update",
-      "action": "bin/install_cron.sh"
+      "name": "Set 1-Min Interval (Test)",
+      "action": "bin/set_1min.sh"
+    },
+    {
+      "name": "Set 30-Min Interval",
+      "action": "bin/set_30min.sh"
     },
     {
       "name": "Sync Photos Now",
