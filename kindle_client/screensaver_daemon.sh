@@ -1,12 +1,12 @@
 #!/bin/sh
 # ==============================================================================
-# Kindle Instagram Screensaver & Photo Frame Daemon
+# Kindle Instagram Photo Frame & Screensaver Daemon (Hardware RTC Edition)
 #
-# Fixes the stuck picture issue by:
-# 1. Overwriting ALL bg_ss*.png slots with the next photo in sequence.
-#    (No matter which slot the Kindle OS loads, it ALWAYS gets the new photo!)
-# 2. Cycling immediately every time the Kindle goes to sleep.
-# 3. Auto-cycling every 30 minutes while the Kindle rests in sleep (Photo Frame mode).
+# Enables:
+# 1. Immediate picture change whenever you press the lock button.
+# 2. 30-minute automatic picture change while sleeping on a desk/stand:
+#    Uses the Kindle's hardware Real Time Clock (RTC) chip to wake the device
+#    from deep CPU suspend, update the e-ink screen, and return to sleep.
 # ==============================================================================
 
 PHOTOS_DIR="/mnt/us/screensavers"
@@ -17,7 +17,7 @@ LOG_FILE="/mnt/us/screensaver.log"
 BASE_URL="https://twoofdiamonds.github.io/kindleframe"
 MANIFEST_FILE="/tmp/kindle_manifest.json"
 
-# Rotation interval while sleeping (in seconds: 1800 = 30 minutes)
+# Rotation interval in seconds (1800 = 30 minutes)
 CYCLE_INTERVAL=1800
 
 mkdir -p "$PHOTOS_DIR"
@@ -26,7 +26,35 @@ log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOG_FILE"
 }
 
-# Kill any existing instance
+# Find active hardware RTC wakealarm interface
+get_rtc_device() {
+    for dev in /sys/class/rtc/rtc1/wakealarm /sys/class/rtc/rtc0/wakealarm; do
+        if [ -e "$dev" ]; then
+            echo "$dev"
+            return 0
+        fi
+    done
+    return 1
+}
+
+RTC_ALARM=$(get_rtc_device)
+
+set_hardware_wake_alarm() {
+    INTERVAL="$1"
+    if [ -n "$RTC_ALARM" ] && [ -e "$RTC_ALARM" ]; then
+        # Reset previous alarm, then set target epoch time
+        echo 0 > "$RTC_ALARM" 2>/dev/null
+        TARGET=$(( $(date +%s) + INTERVAL ))
+        echo "$TARGET" > "$RTC_ALARM" 2>/dev/null
+        log "Hardware RTC alarm set for +${INTERVAL}s (target: $TARGET)"
+        return 0
+    fi
+    # Fallback via powerd LIPC property
+    lipc-set-prop -i com.lab126.powerd rtcWakeup "$INTERVAL" 2>/dev/null
+    return 0
+}
+
+# Kill existing instance
 if [ -f "$PID_FILE" ]; then
     OLD_PID=$(cat "$PID_FILE")
     if [ -d "/proc/$OLD_PID" ]; then
@@ -36,42 +64,10 @@ if [ -f "$PID_FILE" ]; then
 fi
 
 echo $$ > "$PID_FILE"
-log "Screensaver rotator daemon started (PID: $$)."
+log "Photo frame daemon started with RTC hardware alarm support (PID: $$)."
 
-sync_photos_from_github() {
-    if ping -c 1 -W 2 8.8.8.8 >/dev/null 2>&1; then
-        if curl -s -k -f --connect-timeout 8 "$BASE_URL/manifest.json" -o "$MANIFEST_FILE" 2>/dev/null || \
-           wget --no-check-certificate -q --timeout=8 "$BASE_URL/manifest.json" -O "$MANIFEST_FILE" 2>/dev/null; then
-            
-            IMAGES_LIST=$(grep -o '"images": *\[[^]]*\]' "$MANIFEST_FILE" | grep -o '"[^"]*\.png"' | tr -d '"')
-            if [ -n "$IMAGES_LIST" ]; then
-                for img in $IMAGES_LIST; do
-                    if [ ! -f "$PHOTOS_DIR/$img" ]; then
-                        log "Downloading new photo: $img"
-                        curl -s -k -f "$BASE_URL/images/$img" -o "$PHOTOS_DIR/$img" 2>/dev/null || \
-                        wget --no-check-certificate -q "$BASE_URL/images/$img" -O "$PHOTOS_DIR/$img" 2>/dev/null
-                    fi
-                done
-                for f in "$PHOTOS_DIR"/*.png; do
-                    case "$(basename "$f")" in
-                        bg_ss*) ;;
-                        *)
-                            fname=$(basename "$f")
-                            echo "$IMAGES_LIST" | grep -q "$fname" || rm -f "$f"
-                            ;;
-                    esac
-                done
-            fi
-            rm -f "$MANIFEST_FILE"
-        fi
-    fi
-}
-
-rotate_to_next_photo() {
-    # Get all original photos (ignore bg_ss copies)
+rotate_and_display() {
     ALL_PHOTOS=$(ls "$PHOTOS_DIR"/*.png 2>/dev/null | grep -v 'bg_ss')
-    
-    # Fallback to all pngs if none matched
     if [ -z "$ALL_PHOTOS" ]; then
         ALL_PHOTOS=$(ls "$PHOTOS_DIR"/*.png 2>/dev/null)
     fi
@@ -94,10 +90,9 @@ rotate_to_next_photo() {
 
     if [ -f "$SELECTED" ]; then
         FNAME=$(basename "$SELECTED")
-        log "Rotating to photo [$PICK_NUM/$COUNT]: $FNAME"
+        log "Displaying photo [$PICK_NUM/$COUNT]: $FNAME"
 
-        # 1. Overwrite all bg_ss00.png through bg_ss19.png with the selected photo
-        # This guarantees that whatever slot Kindle OS loads, it displays this exact photo!
+        # Prime all native screensaver slots with this photo
         IDX=0
         while [ "$IDX" -lt 20 ]; do
             PAD=$(printf "%02d" $IDX)
@@ -108,31 +103,33 @@ rotate_to_next_photo() {
             IDX=$((IDX + 1))
         done
 
-        # 2. If the Kindle is currently in screensaver, immediately draw it via eips
-        CURRENT_STATE=$(lipc-get-prop com.lab126.powerd state 2>/dev/null)
-        if [ "$CURRENT_STATE" = "screenSaver" ] || [ "$CURRENT_STATE" = "readyToSuspend" ]; then
-            eips -f -g "$SELECTED" 2>/dev/null
-        fi
+        # Draw directly to e-ink screen
+        eips -f -g "$SELECTED" 2>/dev/null
         return 0
     fi
     return 1
 }
 
-# Initial photo rotation
-rotate_to_next_photo
+# Initial rotation
+rotate_and_display
 
-# Background Loop:
-# Listens for sleep events AND manages periodic auto-cycling while resting
+# Main Loop:
+# 1. Catches sleep event (power button / timeout) -> rotates photo immediately.
+# 2. Sets hardware RTC alarm so the Kindle hardware wakes the CPU every 30 minutes while asleep.
+# 3. When alarm fires while asleep -> rotates to next photo and goes back to sleep!
 while true; do
-    # Wait for the next sleep event (blocks until you press power / close cover)
-    # Timeout after CYCLE_INTERVAL so it also auto-rotates if left sleeping on a desk!
-    lipc-wait-event -m -s "$CYCLE_INTERVAL" com.lab126.powerd goingToScreenSaver >/dev/null 2>&1
-    
-    # When triggered (either by sleep event or timer expiry):
-    # Wait 0.5s for Kindle's power transition to settle, then rotate!
-    sleep 0.5
-    rotate_to_next_photo
+    # Arm hardware RTC wakealarm for 30 minutes
+    set_hardware_wake_alarm "$CYCLE_INTERVAL"
 
-    # Check for new photos from GitHub
-    sync_photos_from_github
+    # Wait for either user lock event OR RTC alarm wakeup from suspend
+    # This blocks until powerd signals sleep/wake/alarm
+    lipc-wait-event -m -s "$CYCLE_INTERVAL" com.lab126.powerd goingToScreenSaver,resumedFromSuspend >/dev/null 2>&1
+
+    # Check if Kindle is currently sleeping / screensaver
+    STATE=$(lipc-get-prop com.lab126.powerd state 2>/dev/null)
+    
+    if [ "$STATE" = "screenSaver" ] || [ "$STATE" = "readyToSuspend" ] || [ "$STATE" = "active" ]; then
+        sleep 0.5
+        rotate_and_display
+    fi
 done
