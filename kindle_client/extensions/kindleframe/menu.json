@@ -25,6 +25,10 @@
       "action": "bin/set_30min.sh"
     },
     {
+      "name": "Silence Cloud & Welcome Nag",
+      "action": "bin/fix_ui.sh"
+    },
+    {
       "name": "Sync Photos Now",
       "action": "bin/sync.sh"
     }
