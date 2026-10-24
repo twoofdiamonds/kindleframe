@@ -9,8 +9,8 @@
       "action": "bin/install_cron.sh"
     },
     {
-      "name": "Remove Welcome & Cloud Popups",
-      "action": "bin/fix_ui.sh"
+      "name": "Unblock Amazon Registration",
+      "action": "bin/unblock.sh"
     },
     {
       "name": "Sync Photos Now",
