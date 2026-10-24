@@ -1,12 +1,12 @@
 {
   "instagram": {
-    "target_username": "koel.jpg"
+    "target_username": "natgeo"
   },
   "kindle": {
     "model": "Kindle 10th Gen Basic",
     "width": 600,
     "height": 800,
-    "picture_change_interval_seconds": 1800,
+    "picture_change_interval_seconds": 60,
     "max_posts_to_keep": 2
   },
   "notifications": {
