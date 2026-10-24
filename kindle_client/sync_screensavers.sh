@@ -32,14 +32,23 @@ fi
 log "WiFi connected (IP: $IP_CHECK). Checking GitHub..."
 eips 1 1 "Connecting to GitHub...        " 2>/dev/null
 
+# Ensure standalone ARM curl binary has execute permissions
+if [ -f /mnt/us/bin/curl ]; then
+    chmod +x /mnt/us/bin/curl 2>/dev/null
+fi
+
 download_file() {
     URL="$1"
     DEST="$2"
-    # Fast 5-second connection timeout so it never hangs
-    if [ -x /usr/bin/curl ] || command -v curl >/dev/null 2>&1; then
-        curl -s -k -f --connect-timeout 5 -m 15 -o "$DEST" "$URL" 2>/dev/null
-    elif [ -x /usr/bin/wget ] || command -v wget >/dev/null 2>&1; then
-        wget -q -T 5 -O "$DEST" "$URL" 2>/dev/null || wget -T 5 -O "$DEST" "$URL" 2>/dev/null
+    # 1. Use standalone static ARM curl binary first (guaranteed TLS 1.3 / HTTPS)
+    if [ -x /mnt/us/bin/curl ]; then
+        /mnt/us/bin/curl -s -k -f --connect-timeout 8 -m 20 -o "$DEST" "$URL" 2>/dev/null
+    elif [ -x /usr/bin/curl ]; then
+        /usr/bin/curl -s -k -f --connect-timeout 8 -m 20 -o "$DEST" "$URL" 2>/dev/null
+    elif command -v curl >/dev/null 2>&1; then
+        curl -s -k -f --connect-timeout 8 -m 20 -o "$DEST" "$URL" 2>/dev/null
+    else
+        wget -q -O "$DEST" "$URL" 2>/dev/null || wget -O "$DEST" "$URL" 2>/dev/null
     fi
     [ -s "$DEST" ]
 }
