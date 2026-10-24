@@ -41,14 +41,42 @@ done
 
 echo "✓ Converted $INDEX photos to native Kindle screensaver format."
 
-# 4. Make filesystem read-only again
+# 4. Install permanent Upstart autostart service on boot
+cat << 'EOF' > /etc/upstart/kindleframe.conf
+description "KindleFrame Photo Cycler Daemon"
+
+start on started lab126_gui
+stop on stopping lab126_gui
+
+respawn
+respawn limit 10 120
+
+script
+    COUNT=0
+    while [ ! -f /mnt/us/screensaver_daemon.sh ] && [ $COUNT -lt 30 ]; do
+        sleep 2
+        COUNT=$((COUNT + 1))
+    done
+
+    if [ -f /mnt/us/screensaver_daemon.sh ] && [ ! -f /mnt/us/.kindleframe_disabled ]; then
+        exec /bin/sh /mnt/us/screensaver_daemon.sh
+    fi
+end script
+EOF
+chmod 644 /etc/upstart/kindleframe.conf
+initctl reload-configuration 2>/dev/null
+
+# 5. Make filesystem read-only again
 mntroot ro 2>/dev/null || mount -o remount,ro / 2>/dev/null
 
-# 5. Refresh Kindle UI so it re-indexes screensavers
+# 6. Clear disabled flag
+rm -f /mnt/us/.kindleframe_disabled
+
+# 7. Refresh Kindle UI so it re-indexes screensavers
 echo "Restarting Kindle UI..."
 killall cvm 2>/dev/null || restart lab126_gui 2>/dev/null
 
-# 6. Start screensaver auto-cycle daemon in background
+# 8. Start screensaver auto-cycle daemon in background
 if [ -f /tmp/kindle_ss_hook.pid ]; then
     kill -9 $(cat /tmp/kindle_ss_hook.pid) 2>/dev/null
     rm -f /tmp/kindle_ss_hook.pid
@@ -56,4 +84,4 @@ fi
 /bin/sh /mnt/us/screensaver_daemon.sh >/dev/null 2>&1 &
 
 echo "=== SUCCESS! ==="
-echo "Screensaver activated with 1-minute auto-cycle!"
+echo "Screensaver activated with 30-minute auto-cycle and permanent boot autostart!"

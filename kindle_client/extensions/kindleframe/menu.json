@@ -5,7 +5,11 @@
       "action": "bin/replace_ss.sh"
     },
     {
-      "name": "Start 1-Min Photo Cycler",
+      "name": "Enable Permanent Auto-Start (30m)",
+      "action": "bin/enable_autostart.sh"
+    },
+    {
+      "name": "Start Photo Cycler (30 min)",
       "action": "bin/start.sh"
     },
     {
