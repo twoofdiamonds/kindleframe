@@ -1,26 +1,20 @@
 #!/bin/sh
 # ==============================================================================
-# Kindle Instagram Photo Frame & Screensaver Daemon (Hardware RTC Edition)
+# Kindle Photo Frame Daemon (Simple Power-Cycle Approach)
 #
-# Enables:
-# 1. Immediate picture change whenever you press the lock button.
-# 2. 30-minute automatic picture change while sleeping on a desk/stand:
-#    Uses the Kindle's hardware Real Time Clock (RTC) chip to wake the device
-#    from deep CPU suspend, update the e-ink screen, and return to sleep.
+# The Kindle natively rotates through bg_ss00.png, bg_ss01.png, etc. each time
+# it goes to sleep. This daemon simply uses the hardware RTC alarm to wake the
+# Kindle from deep suspend, then simulates a power button press cycle
+# (wake -> brief pause -> sleep) so the OS naturally shows the next screensaver.
+#
+# If the Kindle is already awake (user is reading), it does nothing.
 # ==============================================================================
 
-PHOTOS_DIR="/mnt/us/screensavers"
-BLANKET_DIR="/usr/share/blanket/screensaver"
-STATE_FILE="/tmp/current_ss_index"
 PID_FILE="/tmp/kindle_ss_hook.pid"
 LOG_FILE="/mnt/us/screensaver.log"
-BASE_URL="https://twoofdiamonds.github.io/kindleframe"
-MANIFEST_FILE="/tmp/kindle_manifest.json"
 
 # Rotation interval in seconds (60 = 1 minute for testing)
 CYCLE_INTERVAL=60
-
-mkdir -p "$PHOTOS_DIR"
 
 log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$LOG_FILE"
@@ -39,22 +33,20 @@ get_rtc_device() {
 
 RTC_ALARM=$(get_rtc_device)
 
-set_hardware_wake_alarm() {
-    INTERVAL="$1"
+set_wake_alarm() {
+    SECS="$1"
     if [ -n "$RTC_ALARM" ] && [ -e "$RTC_ALARM" ]; then
-        # Reset previous alarm, then set target epoch time
         echo 0 > "$RTC_ALARM" 2>/dev/null
-        TARGET=$(( $(date +%s) + INTERVAL ))
+        TARGET=$(( $(date +%s) + SECS ))
         echo "$TARGET" > "$RTC_ALARM" 2>/dev/null
-        log "Hardware RTC alarm set for +${INTERVAL}s (target: $TARGET)"
         return 0
     fi
-    # Fallback via powerd LIPC property
-    lipc-set-prop -i com.lab126.powerd rtcWakeup "$INTERVAL" 2>/dev/null
+    # Fallback via powerd LIPC
+    lipc-set-prop -i com.lab126.powerd rtcWakeup "$SECS" 2>/dev/null
     return 0
 }
 
-# Kill existing instance
+# Kill any previous instance
 if [ -f "$PID_FILE" ]; then
     OLD_PID=$(cat "$PID_FILE")
     if [ -d "/proc/$OLD_PID" ]; then
@@ -64,93 +56,54 @@ if [ -f "$PID_FILE" ]; then
 fi
 
 echo $$ > "$PID_FILE"
-log "Photo frame daemon started with RTC hardware alarm support (PID: $$)."
+log "Photo frame daemon started (PID: $$). Cycle every ${CYCLE_INTERVAL}s."
 
-rotate_and_display() {
-    ALL_PHOTOS=$(ls "$PHOTOS_DIR"/*.png 2>/dev/null | grep -v 'bg_ss')
-    if [ -z "$ALL_PHOTOS" ]; then
-        ALL_PHOTOS=$(ls "$PHOTOS_DIR"/*.png 2>/dev/null)
-    fi
-
-    if [ -z "$ALL_PHOTOS" ]; then
-        log "No photos found in $PHOTOS_DIR."
-        return 1
-    fi
-
-    COUNT=$(echo "$ALL_PHOTOS" | wc -w)
-    INDEX=0
-    if [ -f "$STATE_FILE" ]; then
-        INDEX=$(cat "$STATE_FILE")
-    fi
-    INDEX=$(( (INDEX + 1) % COUNT ))
-    echo "$INDEX" > "$STATE_FILE"
-
-    PICK_NUM=$(( INDEX + 1 ))
-    # Correctly extract only the N-th file from the list
-    SELECTED=$(echo "$ALL_PHOTOS" | sed -n "${PICK_NUM}p")
-    [ -z "$SELECTED" ] && SELECTED=$(echo "$ALL_PHOTOS" | awk -v n="$PICK_NUM" 'NR==n')
-
-    if [ -n "$SELECTED" ] && [ -f "$SELECTED" ]; then
-        FNAME=$(basename "$SELECTED")
-        log "Displaying photo [$PICK_NUM/$COUNT]: $FNAME"
-
-        # Prime all native screensaver slots with this photo
-        IDX=0
-        while [ "$IDX" -lt 20 ]; do
-            PAD=$(printf "%02d" $IDX)
-            cp -f "$SELECTED" "$PHOTOS_DIR/bg_ss${PAD}.png" 2>/dev/null
-            if [ -d "$BLANKET_DIR" ] && [ ! -L "$BLANKET_DIR" ]; then
-                cp -f "$SELECTED" "$BLANKET_DIR/bg_ss${PAD}.png" 2>/dev/null
-            fi
-            IDX=$((IDX + 1))
-        done
-
-        # Draw directly to e-ink screen
-        eips -f -g "$SELECTED" 2>/dev/null
-        return 0
-    else
-        log "Error: Could not pick photo #$PICK_NUM from total $COUNT photos."
-    fi
-    return 1
-}
-
-# Initial rotation on daemon start
-rotate_and_display
-
-# Main Loop:
-# 1. Catches sleep event (power button / timeout) -> rotates photo immediately.
-# 2. Sets hardware RTC alarm so the Kindle hardware wakes the CPU every 60s while asleep.
-# 3. When alarm fires while asleep -> rotates to next photo and returns to sleep!
 while true; do
-    # Read dynamic interval if updated from manifest
+    # Read dynamic interval if updated by sync
     if [ -f /tmp/kindle_cycle_interval ]; then
-        VAL=$(cat /tmp/kindle_cycle_interval)
+        VAL=$(cat /tmp/kindle_cycle_interval 2>/dev/null)
         if [ "$VAL" -ge 10 ] 2>/dev/null; then
             CYCLE_INTERVAL="$VAL"
         fi
     fi
 
-    # Arm hardware RTC wakealarm
-    set_hardware_wake_alarm "$CYCLE_INTERVAL"
+    # Arm hardware RTC to wake CPU from deep suspend
+    set_wake_alarm "$CYCLE_INTERVAL"
 
-    # Wait for either user lock event OR RTC alarm wakeup from suspend
-    # This blocks until powerd signals sleep/wake/alarm
-    lipc-wait-event -m -s "$CYCLE_INTERVAL" com.lab126.powerd goingToScreenSaver,resumedFromSuspend >/dev/null 2>&1
+    # Sleep for the interval. If CPU suspends, RTC alarm will resume execution.
+    sleep "$CYCLE_INTERVAL"
 
-    # Check powerd state and rotate photo
+    # Check current power state
     STATE=$(lipc-get-prop com.lab126.powerd state 2>/dev/null)
-    log "Wake/timer event fired (State: '$STATE'). Rotating photo..."
-    rotate_and_display
+    log "Timer fired (state: $STATE)"
 
-        # Autonomous 12-hour WiFi sync (43200s)
-        NOW=$(date +%s)
-        LAST_SYNC_FILE="/tmp/kindle_last_sync_time"
-        LAST_SYNC=0
-        [ -f "$LAST_SYNC_FILE" ] && LAST_SYNC=$(cat "$LAST_SYNC_FILE" 2>/dev/null)
-        if [ $(( NOW - LAST_SYNC )) -ge 43200 ]; then
-            echo "$NOW" > "$LAST_SYNC_FILE"
-            log "12 hours elapsed: triggering autonomous WiFi sync..."
-            /bin/sh /mnt/us/sync_screensavers.sh >/dev/null 2>&1 &
-        fi
+    if [ "$STATE" = "screenSaver" ] || [ "$STATE" = "readyToSuspend" ]; then
+        # Kindle is sleeping with screensaver visible.
+        # Simulate: wake up -> tiny pause -> go back to sleep
+        # This makes Kindle OS naturally show the NEXT bg_ssNN.png image.
+
+        log "Cycling: waking up..."
+        lipc-set-prop com.lab126.powerd wakeUp 1 2>/dev/null
+        sleep 3
+
+        log "Cycling: sending back to sleep..."
+        lipc-set-prop com.lab126.powerd powerButton 1 2>/dev/null
+        sleep 2
+
+        log "Cycle complete. Next screensaver should now be displayed."
+    else
+        # Kindle is awake (user is using it). Do nothing.
+        log "Kindle is active (state: $STATE). Skipping cycle."
+    fi
+
+    # Autonomous 12-hour WiFi sync
+    NOW=$(date +%s)
+    LAST_SYNC_FILE="/tmp/kindle_last_sync_time"
+    LAST_SYNC=0
+    [ -f "$LAST_SYNC_FILE" ] && LAST_SYNC=$(cat "$LAST_SYNC_FILE" 2>/dev/null)
+    if [ $(( NOW - LAST_SYNC )) -ge 43200 ]; then
+        echo "$NOW" > "$LAST_SYNC_FILE"
+        log "12 hours elapsed: triggering WiFi sync..."
+        /bin/sh /mnt/us/sync_screensavers.sh >/dev/null 2>&1 &
     fi
 done
