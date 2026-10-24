@@ -17,8 +17,8 @@ LOG_FILE="/mnt/us/screensaver.log"
 BASE_URL="https://twoofdiamonds.github.io/kindleframe"
 MANIFEST_FILE="/tmp/kindle_manifest.json"
 
-# Rotation interval in seconds (1800 = 30 minutes)
-CYCLE_INTERVAL=1800
+# Rotation interval in seconds (60 = 1 minute for testing)
+CYCLE_INTERVAL=60
 
 mkdir -p "$PHOTOS_DIR"
 

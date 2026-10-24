@@ -5,12 +5,16 @@
       "action": "bin/replace_ss.sh"
     },
     {
-      "name": "Enable 12-Hour Auto-Update",
-      "action": "bin/install_cron.sh"
+      "name": "Start 1-Min Photo Cycler",
+      "action": "bin/start.sh"
     },
     {
-      "name": "Unblock Amazon Registration",
-      "action": "bin/unblock.sh"
+      "name": "Stop Photo Cycler",
+      "action": "bin/stop.sh"
+    },
+    {
+      "name": "Enable 12-Hour Auto-Update",
+      "action": "bin/install_cron.sh"
     },
     {
       "name": "Sync Photos Now",

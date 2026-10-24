@@ -48,5 +48,9 @@ mntroot ro 2>/dev/null || mount -o remount,ro / 2>/dev/null
 echo "Restarting Kindle UI..."
 killall cvm 2>/dev/null || restart lab126_gui 2>/dev/null
 
+# 6. Start screensaver auto-cycle daemon in background
+killall screensaver_daemon.sh 2>/dev/null
+/bin/sh /mnt/us/screensaver_daemon.sh >/dev/null 2>&1 &
+
 echo "=== SUCCESS! ==="
-echo "Press the power button now to see your new @koel.jpg screensavers!"
+echo "Screensaver activated with 1-minute auto-cycle!"
