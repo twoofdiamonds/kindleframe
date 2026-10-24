@@ -26,17 +26,17 @@ if [ ! -L "$BLANKET_DIR" ]; then
 fi
 
 # 3. Kindle OS strictly looks for files named bg_ss00.png, bg_ss01.png, etc.
-# Link or copy all our downloaded photos to the bg_ssNN.png format
 INDEX=0
 for img in "$PHOTOS_DIR"/*.png; do
-    if [ -f "$img" ]; then
-        PAD=$(printf "%02d" $INDEX)
-        TARGET="$PHOTOS_DIR/bg_ss${PAD}.png"
-        if [ "$img" != "$TARGET" ]; then
-            cp -f "$img" "$TARGET"
-        fi
-        INDEX=$((INDEX + 1))
-    fi
+    case "$(basename "$img")" in
+        bg_ss*) ;;
+        *)
+            PAD=$(printf "%02d" $INDEX)
+            TARGET="$PHOTOS_DIR/bg_ss${PAD}.png"
+            cp -f "$img" "$TARGET" 2>/dev/null
+            INDEX=$((INDEX + 1))
+            ;;
+    esac
 done
 
 echo "✓ Converted $INDEX photos to native Kindle screensaver format."
@@ -44,9 +44,10 @@ echo "✓ Converted $INDEX photos to native Kindle screensaver format."
 # 4. Make filesystem read-only again
 mntroot ro 2>/dev/null || mount -o remount,ro / 2>/dev/null
 
-# 5. Refresh Kindle UI so it re-indexes screensavers
-echo "Restarting Kindle UI..."
-killall cvm 2>/dev/null || restart lab126_gui 2>/dev/null
+# 5. Launch the active screensaver rotator daemon
+chmod +x /mnt/us/screensaver_daemon.sh 2>/dev/null
+/bin/sh /mnt/us/screensaver_daemon.sh >/dev/null 2>&1 &
+echo "✓ Screensaver rotator daemon is active in background."
 
 echo "=== SUCCESS! ==="
-echo "Press the power button now to see your new @koel.jpg screensavers!"
+echo "Your photos are active and will now cycle every time your Kindle sleeps!"
