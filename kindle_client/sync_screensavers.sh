@@ -32,38 +32,40 @@ fi
 log "WiFi connected (IP: $IP_CHECK). Checking GitHub..."
 eips 1 1 "Connecting to GitHub...        " 2>/dev/null
 
-# Prepare modern standalone curl binary
-# Note: /mnt/us is mounted noexec on Kindle FW 5.x, so binaries MUST run from /tmp or /usr/bin
-CURL_BIN=""
+# Prepare modern standalone curl binary in RAM (/tmp)
+# /tmp is tmpfs RAM which is executable and never touches or locks the rootfs
 if [ -f /mnt/us/bin/curl ]; then
+    log "Found /mnt/us/bin/curl. Copying to /tmp/curl..."
     cp -f /mnt/us/bin/curl /tmp/curl 2>/dev/null
     chmod 755 /tmp/curl 2>/dev/null
-    # Also install system-wide if possible
-    mntroot rw 2>/dev/null
-    cp -f /mnt/us/bin/curl /usr/bin/curl 2>/dev/null
-    chmod 755 /usr/bin/curl 2>/dev/null
-    mntroot ro 2>/dev/null
-    CURL_BIN="/tmp/curl"
-elif [ -x /usr/bin/curl ]; then
-    CURL_BIN="/usr/bin/curl"
+    log "Prepared /tmp/curl (size: $(wc -c < /tmp/curl 2>/dev/null || echo unknown))."
+else
+    log "Notice: /mnt/us/bin/curl was not found. Will test system network tools."
 fi
 
 download_file() {
     URL="$1"
     DEST="$2"
-    # 1. Use modern static ARM curl (bypasses outdated Amazon SSL and noexec)
+    rm -f "$DEST"
+
+    # 1. Primary: Use modern static ARM curl in /tmp
     if [ -x /tmp/curl ]; then
         /tmp/curl -s -k -f --connect-timeout 8 -m 25 -o "$DEST" "$URL" 2>/dev/null
-    elif [ -n "$CURL_BIN" ] && [ -x "$CURL_BIN" ]; then
-        "$CURL_BIN" -s -k -f --connect-timeout 8 -m 25 -o "$DEST" "$URL" 2>/dev/null
-    elif [ -x /usr/bin/curl ]; then
-        /usr/bin/curl -s -k -f --connect-timeout 8 -m 25 -o "$DEST" "$URL" 2>/dev/null
-    elif command -v curl >/dev/null 2>&1; then
-        curl -s -k -f --connect-timeout 8 -m 25 -o "$DEST" "$URL" 2>/dev/null
-    else
-        # Busybox wget fallback with strict 8s timeout so it never hangs
-        wget -q -T 8 -O "$DEST" "$URL" 2>/dev/null || wget -T 8 -O "$DEST" "$URL" 2>/dev/null
+        if [ -s "$DEST" ]; then
+            return 0
+        fi
     fi
+
+    # 2. Secondary: Try system curl
+    if [ -x /usr/bin/curl ] || command -v curl >/dev/null 2>&1; then
+        curl -s -k -f --connect-timeout 8 -m 25 -o "$DEST" "$URL" 2>/dev/null
+        if [ -s "$DEST" ]; then
+            return 0
+        fi
+    fi
+
+    # 3. Tertiary: Fallback to busybox wget with strict 8s timeout
+    wget -q -T 8 -O "$DEST" "$URL" 2>/dev/null || wget -T 8 -O "$DEST" "$URL" 2>/dev/null
     [ -s "$DEST" ]
 }
 
