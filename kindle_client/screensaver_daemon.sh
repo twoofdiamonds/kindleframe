@@ -86,9 +86,11 @@ rotate_and_display() {
     echo "$INDEX" > "$STATE_FILE"
 
     PICK_NUM=$(( INDEX + 1 ))
-    SELECTED=$(echo "$ALL_PHOTOS" | awk -v n="$PICK_NUM" '{print $n}')
+    # Correctly extract only the N-th file from the list
+    SELECTED=$(echo "$ALL_PHOTOS" | sed -n "${PICK_NUM}p")
+    [ -z "$SELECTED" ] && SELECTED=$(echo "$ALL_PHOTOS" | awk -v n="$PICK_NUM" 'NR==n')
 
-    if [ -f "$SELECTED" ]; then
+    if [ -n "$SELECTED" ] && [ -f "$SELECTED" ]; then
         FNAME=$(basename "$SELECTED")
         log "Displaying photo [$PICK_NUM/$COUNT]: $FNAME"
 
@@ -106,17 +108,19 @@ rotate_and_display() {
         # Draw directly to e-ink screen
         eips -f -g "$SELECTED" 2>/dev/null
         return 0
+    else
+        log "Error: Could not pick photo #$PICK_NUM from total $COUNT photos."
     fi
     return 1
 }
 
-# Initial rotation
+# Initial rotation on daemon start
 rotate_and_display
 
 # Main Loop:
 # 1. Catches sleep event (power button / timeout) -> rotates photo immediately.
-# 2. Sets hardware RTC alarm so the Kindle hardware wakes the CPU every 30 minutes while asleep.
-# 3. When alarm fires while asleep -> rotates to next photo and goes back to sleep!
+# 2. Sets hardware RTC alarm so the Kindle hardware wakes the CPU every 60s while asleep.
+# 3. When alarm fires while asleep -> rotates to next photo and returns to sleep!
 while true; do
     # Read dynamic interval if updated from manifest
     if [ -f /tmp/kindle_cycle_interval ]; then
@@ -133,12 +137,10 @@ while true; do
     # This blocks until powerd signals sleep/wake/alarm
     lipc-wait-event -m -s "$CYCLE_INTERVAL" com.lab126.powerd goingToScreenSaver,resumedFromSuspend >/dev/null 2>&1
 
-    # Check if Kindle is currently sleeping / screensaver
+    # Check powerd state and rotate photo
     STATE=$(lipc-get-prop com.lab126.powerd state 2>/dev/null)
-    
-    if [ "$STATE" = "screenSaver" ] || [ "$STATE" = "readyToSuspend" ] || [ "$STATE" = "active" ]; then
-        sleep 0.5
-        rotate_and_display
+    log "Wake/timer event fired (State: '$STATE'). Rotating photo..."
+    rotate_and_display
 
         # Autonomous 12-hour WiFi sync (43200s)
         NOW=$(date +%s)

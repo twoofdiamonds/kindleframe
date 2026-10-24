@@ -49,7 +49,10 @@ echo "Restarting Kindle UI..."
 killall cvm 2>/dev/null || restart lab126_gui 2>/dev/null
 
 # 6. Start screensaver auto-cycle daemon in background
-killall screensaver_daemon.sh 2>/dev/null
+if [ -f /tmp/kindle_ss_hook.pid ]; then
+    kill -9 $(cat /tmp/kindle_ss_hook.pid) 2>/dev/null
+    rm -f /tmp/kindle_ss_hook.pid
+fi
 /bin/sh /mnt/us/screensaver_daemon.sh >/dev/null 2>&1 &
 
 echo "=== SUCCESS! ==="
