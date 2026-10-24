@@ -61,5 +61,6 @@ jobs:
             echo "No new images or changes to commit."
           else
             git commit -m "Auto-sync Instagram photos for Kindle [skip ci]"
+            git pull --rebase origin main
             git push
           fi
