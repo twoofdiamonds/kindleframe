@@ -325,6 +325,22 @@ def main():
     open(os.path.join(DOCS_DIR, ".nojekyll"), "a").close()
 
     state = load_json(STATE_FILE, {"active_posts": []})
+    
+    # If the target username changed, purge all previous account's photos
+    previous_user = state.get("target_username")
+    if previous_user and previous_user.lower() != target_user.lower():
+        logger.info(f"Target account changed from @{previous_user} to @{target_user}. Purging previous photos...")
+        for p in state.get("active_posts", []):
+            for img_name in p.get("images", []):
+                old_path = os.path.join(IMAGES_DIR, img_name)
+                if os.path.exists(old_path):
+                    try:
+                        os.remove(old_path)
+                    except Exception:
+                        pass
+        state["active_posts"] = []
+
+    state["target_username"] = target_user
     active_posts = state.get("active_posts", [])
     known_shortcodes = {p["shortcode"] for p in active_posts}
 

@@ -2,7 +2,7 @@
   "status": "ok",
   "cycle_interval_seconds": 60,
   "last_sync": "2026-10-24T09:26:59.800622+00:00",
-  "total_images": 26,
+  "total_images": 7,
   "images": [
     "DeuOR-CjKE9_0.png",
     "DeuOR-CjKE9_1.png",
@@ -10,25 +10,6 @@
     "DeuOR-CjKE9_3.png",
     "DeuOR-CjKE9_4.png",
     "DeuOR-CjKE9_5.png",
-    "DeuOR-CjKE9_6.png",
-    "Dc3-33DDtaQ_0.png",
-    "Dc3-33DDtaQ_1.png",
-    "Dc3-33DDtaQ_2.png",
-    "Dc3-33DDtaQ_3.png",
-    "Dc3-33DDtaQ_4.png",
-    "Dc3-33DDtaQ_5.png",
-    "Dc3-33DDtaQ_6.png",
-    "Dc3-33DDtaQ_7.png",
-    "Dc3-33DDtaQ_8.png",
-    "Dc3-33DDtaQ_9.png",
-    "Dc3-33DDtaQ_10.png",
-    "Dc3-33DDtaQ_11.png",
-    "Dc3-33DDtaQ_12.png",
-    "Dc3-33DDtaQ_13.png",
-    "Dc3-33DDtaQ_14.png",
-    "Dc3-33DDtaQ_15.png",
-    "Dc3-33DDtaQ_16.png",
-    "Dc3-33DDtaQ_17.png",
-    "Dc3-33DDtaQ_18.png"
+    "DeuOR-CjKE9_6.png"
   ]
 }

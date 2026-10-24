@@ -118,7 +118,15 @@ rotate_and_display
 # 2. Sets hardware RTC alarm so the Kindle hardware wakes the CPU every 30 minutes while asleep.
 # 3. When alarm fires while asleep -> rotates to next photo and goes back to sleep!
 while true; do
-    # Arm hardware RTC wakealarm for 30 minutes
+    # Read dynamic interval if updated from manifest
+    if [ -f /tmp/kindle_cycle_interval ]; then
+        VAL=$(cat /tmp/kindle_cycle_interval)
+        if [ "$VAL" -ge 10 ] 2>/dev/null; then
+            CYCLE_INTERVAL="$VAL"
+        fi
+    fi
+
+    # Arm hardware RTC wakealarm
     set_hardware_wake_alarm "$CYCLE_INTERVAL"
 
     # Wait for either user lock event OR RTC alarm wakeup from suspend

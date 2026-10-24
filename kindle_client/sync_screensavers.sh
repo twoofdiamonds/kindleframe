@@ -76,32 +76,43 @@ if download_file "$BASE_URL/manifest.json" "$MANIFEST_FILE"; then
             fi
         done
 
+        # Extract cycle interval from manifest and save for the rotator daemon
+        INTERVAL=$(grep -o '"cycle_interval_seconds": *[0-9]*' "$MANIFEST_FILE" | grep -o '[0-9]*')
+        if [ -n "$INTERVAL" ]; then
+            echo "$INTERVAL" > /tmp/kindle_cycle_interval
+            log "Updated rotation interval to ${INTERVAL}s."
+        fi
+
         # Prune old screensavers not in manifest
         for local_file in "$SCREENSAVERS_DIR"/*.png; do
             if [ -f "$local_file" ]; then
                 fname=$(basename "$local_file")
-                echo "$IMAGES_LIST" | grep -q "$fname"
-                if [ $? -ne 0 ]; then
-                    log "Removing expired screensaver: $fname"
-                    rm -f "$local_file"
-                fi
+                case "$fname" in
+                    bg_ss*) ;; # Skip bg_ss copies, handled below
+                    *)
+                        echo "$IMAGES_LIST" | grep -q "$fname"
+                        if [ $? -ne 0 ]; then
+                            log "Removing expired screensaver: $fname"
+                            rm -f "$local_file"
+                        fi
+                        ;;
+                esac
             fi
         done
 
-        # Re-index photos as bg_ssNN.png for Kindle's native screensaver engine
+        # Re-index active photos into bg_ss slots
+        rm -f "$SCREENSAVERS_DIR"/bg_ss*.png 2>/dev/null
         IDX=0
         for f in "$SCREENSAVERS_DIR"/*.png; do
-            case "$(basename "$f")" in
-                bg_ss*) ;;
-                *)
-                    PAD=$(printf "%02d" $IDX)
-                    cp -f "$f" "$SCREENSAVERS_DIR/bg_ss${PAD}.png"
-                    IDX=$((IDX + 1))
-                    ;;
-            esac
+            PAD=$(printf "%02d" $IDX)
+            cp -f "$f" "$SCREENSAVERS_DIR/bg_ss${PAD}.png" 2>/dev/null
+            IDX=$((IDX + 1))
         done
 
-        log "Sync complete. Downloaded: $DOWNLOAD_COUNT new photos, total native screensavers: $IDX."
+        # Reset rotation index so new photos display right away
+        rm -f /tmp/current_ss_index
+
+        log "Sync complete. Downloaded: $DOWNLOAD_COUNT new photos, total active photos: $IDX."
     fi
     rm -f "$MANIFEST_FILE"
 else
